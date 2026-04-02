@@ -2,14 +2,19 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 
-// pdf-parse 导入修复
-let pdfParse;
+// pdf-parse 导入 - 使用不同的方式
 try {
-  const pdf = require('pdf-parse');
-  pdfParse = pdf.default || pdf;
+  console.log('尝试导入 pdf-parse...');
+  const pdfModule = require('pdf-parse');
+  console.log('pdf-parse 模块类型:', typeof pdfModule);
+  console.log('pdf-parse 模块内容:', Object.keys(pdfModule));
 } catch (e) {
   console.error('pdf-parse 导入失败:', e.message);
 }
+
+// 尝试多种导入方式
+const pdfParseLib = require('pdf-parse');
+const pdfParse = typeof pdfParseLib === 'function' ? pdfParseLib : pdfParseLib.default || pdfParseLib.parse;
 
 require('dotenv').config();
 
@@ -28,7 +33,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
-    // 检查文件类型
     if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
       cb(null, true);
     } else {
@@ -39,7 +43,11 @@ const upload = multer({
 
 // 健康检查
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    pdfParseLoaded: typeof pdfParse === 'function'
+  });
 });
 
 // 解析岗位JD
@@ -68,6 +76,7 @@ app.post('/api/analyze-job', async (req, res) => {
 app.post('/api/parse-resume', upload.single('resume'), async (req, res) => {
   try {
     console.log('收到简历上传请求');
+    console.log('pdfParse 类型:', typeof pdfParse);
     
     if (!req.file) {
       console.log('错误: 没有收到文件');
@@ -80,22 +89,18 @@ app.post('/api/parse-resume', upload.single('resume'), async (req, res) => {
       size: req.file.size
     });
     
-    // 检查文件大小
     if (req.file.size === 0) {
       console.log('错误: 文件大小为0');
       return res.status(400).json({ error: '文件为空，请重新上传' });
     }
     
-    // 检查文件类型
-    if (req.file.mimetype !== 'application/pdf' && !req.file.originalname.endsWith('.pdf')) {
-      console.log('错误: 文件类型不对', req.file.mimetype);
-      return res.status(400).json({ error: '只支持 PDF 格式的文件' });
-    }
-    
     // 检查 pdfParse 是否可用
-    if (!pdfParse) {
-      console.error('pdf-parse 模块未正确加载');
-      return res.status(500).json({ error: 'PDF解析模块未正确加载，请联系管理员' });
+    if (typeof pdfParse !== 'function') {
+      console.error('pdf-parse 模块未正确加载，类型:', typeof pdfParse);
+      return res.status(500).json({ 
+        error: 'PDF解析模块未正确加载',
+        debug: { type: typeof pdfParse, keys: Object.keys(pdfParseLib) }
+      });
     }
     
     // 解析PDF
@@ -103,9 +108,14 @@ app.post('/api/parse-resume', upload.single('resume'), async (req, res) => {
     let pdfData;
     try {
       pdfData = await pdfParse(req.file.buffer);
+      console.log('PDF解析成功，页数:', pdfData.numpages);
     } catch (pdfError) {
       console.error('PDF解析失败:', pdfError.message);
-      return res.status(400).json({ error: 'PDF文件解析失败，请检查文件是否损坏' });
+      console.error('错误堆栈:', pdfError.stack);
+      return res.status(400).json({ 
+        error: 'PDF文件解析失败，请检查文件是否损坏',
+        debug: pdfError.message
+      });
     }
     
     const resumeText = pdfData.text;
@@ -146,7 +156,6 @@ app.post('/api/match-analysis', async (req, res) => {
     console.log('开始匹配度分析...');
     const matchResult = await kimiService.analyzeMatch(resumeAnalysis, jobAnalysis);
     
-    // 保存分析记录到数据库（可选）
     try {
       await supabaseService.saveAnalysis({
         match_score: matchResult.overallScore,
