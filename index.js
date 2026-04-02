@@ -1,7 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
+
+// pdf-parse 导入修复
+let pdfParse;
+try {
+  const pdf = require('pdf-parse');
+  pdfParse = pdf.default || pdf;
+} catch (e) {
+  console.error('pdf-parse 导入失败:', e.message);
+}
+
 require('dotenv').config();
 
 const kimiService = require('./services/kimiService');
@@ -81,6 +90,12 @@ app.post('/api/parse-resume', upload.single('resume'), async (req, res) => {
     if (req.file.mimetype !== 'application/pdf' && !req.file.originalname.endsWith('.pdf')) {
       console.log('错误: 文件类型不对', req.file.mimetype);
       return res.status(400).json({ error: '只支持 PDF 格式的文件' });
+    }
+    
+    // 检查 pdfParse 是否可用
+    if (!pdfParse) {
+      console.error('pdf-parse 模块未正确加载');
+      return res.status(500).json({ error: 'PDF解析模块未正确加载，请联系管理员' });
     }
     
     // 解析PDF
