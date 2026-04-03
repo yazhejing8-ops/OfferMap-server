@@ -57,6 +57,14 @@ function adaptJobAnalysis(jobAnalysis) {
       })
     : [];
 
+  // jargon: 对象数组 -> 字符串数组（括号解释格式）
+  const jargon = Array.isArray(jobAnalysis.jargon)
+    ? jobAnalysis.jargon.map(item => {
+        if (typeof item === 'string') return item;
+        return `${item.term || ''}${item.explanation ? `（${item.explanation}）` : ''}${item.relevance ? ` — ${item.relevance}` : ''}`;
+      })
+    : [];
+
   return {
     title: jobAnalysis.title || '未知岗位',
     company: jobAnalysis.company || '',
@@ -66,6 +74,7 @@ function adaptJobAnalysis(jobAnalysis) {
     software,
     keyResponsibilities,
     challenges,
+    jargon,
     summary: jobAnalysis.summary || '暂无总结'
   };
 }
